@@ -1,28 +1,20 @@
-import math
 import numpy as np
 import yfinance as yf
-import matplotlib as plot
-import scipy.stats as stats
 import matplotlib.pyplot as plt
 import datetime as dt
 from scipy.optimize import minimize
 
+# Time is from 5 years ago to today
 today = dt.datetime.today().strftime('%Y-%m-%d')
-#approximately 5 years
 start_date = (dt.datetime.today() - dt.timedelta(days=5*365)).strftime('%Y-%m-%d')  
 
-#for Stocks, fixed income, commodities, real estate
-#stock symbols for each company
+# Symbols for each company that represent stocks, commodities, real estate 
 stocks = ['AAPL', 'MSFT', 'AMZN', 'JNJ', 'XOM', 'TLT', 'GLD', 'VNQ']
 
-#download stock data
+# Download data from Yahoo Finance
 data = yf.download(stocks, start=start_date, end=today)['Close']
 
-#display the first and last few rows that disclude holidays and weekends
-print(data.head())
-print(data.tail())
-
-#plot the closing prices of the stocks
+# Plot the closing prices of the stocks
 data.plot(figsize=(10, 6))
 plt.title("Stock Prices of Selected Companies (5 Years)")
 plt.xlabel("Date")
@@ -31,93 +23,108 @@ plt.legend(stocks)
 plt.grid(True)
 plt.show()
 
-#additional information about each stock
-# for ticker in stocks:
-#     stock = yf.Ticker(ticker)
-#     info = stock.info
-#     print(f"Company: {info.get('longName', 'N/A')}")
-#     print(f"Sector: {info.get('sector', 'N/A')}")
-#     print(f"Market Cap: {info.get('marketCap', 'N/A')}")
-#     print(f"PE Ratio: {info.get('trailingPE', 'N/A')}")
-#     print('-' * 50)
-
-#to use MVP
-    #weights sum to 1 and find the optimal ones according to the minimized risk
-    #Covariance matrix
-    #expected return
-    #risk or volatility (standard deviation)
-    #investor fixes expected return and minimizes the risk
-    #use log utility function for efficient frontier
-    #optimization will be aided by scipy
-
-#computes the percentage change of each stock from the previous day
-#dropna() removes anything missing
+# Dropna() removes any data for non-trading days
 returns = data.pct_change().dropna()
-#calculates the average daily return of each stock
-mean_returns = returns.mean()
-#computes the covariance in a matrix between each stock
-cov_matrix = returns.cov()
 
+# Multiplying by 252 for the annual mean return and covariance matrix
+mean_returns = returns.mean() * 252
+cov_matrix = returns.cov() * 252
 
-#number of assets
 num_assets = len(stocks)
 
-#assigns initial equal weights
+# Assigns initial uniform weights to all assets
 weights = np.array([1/num_assets] * num_assets)
 
-#weights need to be between 0 and 1 and sum up to 1
+# Checks whether the weights sum to 1
 constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+
+# Each asset is between 0 and 1
 bounds = tuple((0, 1) for _ in range(num_assets))
 
-#calculates the returns and risks given the weights, average returns, and covariance
-def portfolio_performance(weights, mean_returns, cov_matrix):
-    returns = np.dot(weights, mean_returns)
-    risk = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-    return returns, risk
+# Chose risk free rate based on Market Yield on U.S. Treasury Securities
+risk_free_rate = 0.0439 
 
-#minimizes risk for a given return
-def minimize_risk(weights, mean_returns, cov_matrix):
-    return portfolio_performance(weights, mean_returns, cov_matrix)[1]
+# Calculate portfolio return with optimal weights
+def portfolio_return(weights, mean_returns):
+    return np.sum(weights * mean_returns)
 
-#calls the function to minimize risk using the contraints, bounds, mean returns, and
-#covariance
-optimized = minimize(minimize_risk, weights, args=(mean_returns, cov_matrix),
-                     method='SLSQP', bounds=bounds, constraints=constraints)
-#optimization uses SLSQP(Sequential Least SQuares Programming) 
-#an optimizer that minimizes a function of multiple variables while considering 
-#any combination of constraints, including bounds, equality, and inequality
+# Function to calculate portfolio volatility (risk)
+def portfolio_volatility(weights, cov_matrix):
+    return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+
+# Function to calculate the Sharpe ratio and negative as the largest negative is the maximum
+def sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
+    sr_return = portfolio_return(weights, mean_returns)
+    sr_volatility = portfolio_volatility(weights, cov_matrix)
+    return -(sr_return - risk_free_rate) / sr_volatility
+
+# Find the minimum variance portfolio
+def min_variance(weights, mean_returns, cov_matrix):
+    return portfolio_volatility(weights, cov_matrix)**2
+
+# Find the minimum variance portfolio
+initial_guess = weights
+mvp_result = minimize(min_variance, initial_guess, args=(mean_returns, cov_matrix),
+                      method='SLSQP', bounds=bounds, constraints=constraints)
+
+mvp_weights = mvp_result.x
+mvp_return = portfolio_return(mvp_weights, mean_returns)
+mvp_volatility = portfolio_volatility(mvp_weights, cov_matrix)
 
 
-#results
-opt_weights = optimized.x
-opt_return, opt_risk = portfolio_performance(opt_weights, mean_returns, cov_matrix)
-
-print("Optimal Portfolio Weights:")
-for ticker, weight in zip(stocks, opt_weights):
+print("Optimal Portfolio Weights Minimum Variance Portfolio:")
+for ticker, weight in zip(stocks, mvp_weights):
     print(f'{ticker}: {weight*100:.2f}%')
 
-print("Expected Return:", opt_return)
-print("Risk (Volatility):", opt_risk)
+print("Expected Return:", mvp_return)
+print("Risk (Volatility):", mvp_volatility)
 
 
-#plot the efficient frontier
-risks = []
-returns_list = []
-for ret in np.linspace(mean_returns.min(), mean_returns.max(), 100):
-    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
-                   {'type': 'eq', 'fun': lambda x: np.dot(x, mean_returns) - ret})
-    optimized = minimize(minimize_risk, weights, args=(mean_returns, cov_matrix),
-                         method='SLSQP', bounds=bounds, constraints=constraints)
-    if optimized.success:
-        risks.append(optimized.fun)
-        returns_list.append(ret)
+# Maximize Sharpe ratio (MMVP)
+mmvp_result = minimize(sharpe_ratio, initial_guess, args=(mean_returns, cov_matrix, risk_free_rate),
+                       method='SLSQP', bounds=bounds, constraints=constraints)
 
+mmvp_weights = mmvp_result.x
+mmvp_return = portfolio_return(mmvp_weights, mean_returns)
+mmvp_volatility = portfolio_volatility(mmvp_weights, cov_matrix)
+
+print("Optimal Portfolio Weights for Mean Variance Portfolio:")
+for ticker, weight in zip(stocks, mmvp_weights):
+    print(f'{ticker}: {weight*100:.2f}%')
+
+print("Expected Return:", mmvp_return)
+print("Risk (Volatility):", mmvp_volatility)
+
+# Generate the efficient frontier
+target_returns = np.linspace(mean_returns.min(), mean_returns.max(), 100)
+target_volatilities = []
+
+for target_return in target_returns:
+    # Constraint for the target return
+    constraints = ({'type': 'eq', 'fun': lambda x: portfolio_return(x, mean_returns) - target_return},
+                   {'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+
+    # Minimize variance given the target return
+    result = minimize(min_variance, initial_guess, args=(mean_returns, cov_matrix),
+                      method='SLSQP', bounds=bounds, constraints=constraints)
+
+    target_volatilities.append(portfolio_volatility(result.x, cov_matrix))
+
+# Calculate and plot the Capital Market Line
+cml_slope = (mmvp_return - risk_free_rate) / mmvp_volatility
+cml_x = np.linspace(0, 0.31, 100)  # Adjust based on your data range
+cml_y = risk_free_rate + cml_slope * cml_x
+
+
+# Plotting the efficient frontier with MMVP and MVP
 plt.figure(figsize=(10, 6))
-plt.plot(risks, returns_list, label='Efficient Frontier')
-plt.scatter(opt_risk, opt_return, color='red', marker='*', label='MVP')
-plt.title('Efficient Frontier and Minimum Variance Portfolio')
-plt.xlabel('Risk (Volatility)')
-plt.ylabel('Expected Return')
-plt.legend()
+plt.plot(target_volatilities, target_returns, label='Efficient Frontier', color='green')
+plt.scatter(mvp_volatility, mvp_return, color='red', marker='*', s=200, label='Minimum Variance Portfolio')
+plt.scatter(mmvp_volatility, mmvp_return, color='blue', marker='*', s=200, label='Maximum Mean-Variance Portfolio')
+plt.title('Efficient Frontier with Minimum Variance and Maximum Mean-Variance Portfolios')
+plt.xlabel('Volatility (Risk)')
+plt.ylabel('Return')
 plt.grid(True)
+plt.plot(cml_x, cml_y, color='black', linewidth=2, label='Capital Market Line')
+plt.legend(loc='upper left', fontsize=10)
 plt.show()
