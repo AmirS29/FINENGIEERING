@@ -38,10 +38,10 @@ num_assets = len(stocks)
 # Assigns initial uniform weights to all assets
 weights = np.array([1/num_assets] * num_assets)
 
-# Checks whether the weights sum to 1
+# Constricts the weights to sum to 1
 constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
 
-# Each asset is between 0 and 1
+# Each asset's weight is between 0 and 1
 bounds = tuple((0, 1) for _ in range(num_assets))
 
 # Chose risk free rate based on Market Yield on U.S. Treasury Securities
