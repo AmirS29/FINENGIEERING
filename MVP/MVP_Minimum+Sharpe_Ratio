@@ -30,6 +30,9 @@ returns = data.pct_change().dropna()
 mean_returns = returns.mean() * 252
 cov_matrix = returns.cov() * 252
 
+print(f"The average annual return is:\n\n{mean_returns}\n")
+print(f"Covariance Matrix:\n{cov_matrix}\n")
+
 num_assets = len(stocks)
 
 # Assigns initial uniform weights to all assets
@@ -72,12 +75,12 @@ mvp_return = portfolio_return(mvp_weights, mean_returns)
 mvp_volatility = portfolio_volatility(mvp_weights, cov_matrix)
 
 
-print("Optimal Portfolio Weights Minimum Variance Portfolio:")
+print("Optimal Portfolio Weights for Minimum Variance Portfolio:")
 for ticker, weight in zip(stocks, mvp_weights):
     print(f'{ticker}: {weight*100:.2f}%')
 
-print("Expected Return:", mvp_return)
-print("Risk (Volatility):", mvp_volatility)
+print("Expected Annual Return:", mvp_return)
+print(f"Annual Risk (Volatility):{mvp_volatility}\n")
 
 
 # Maximize Sharpe ratio (MMVP)
@@ -110,18 +113,18 @@ for target_return in target_returns:
 
     target_volatilities.append(portfolio_volatility(result.x, cov_matrix))
 
-# Calculate and plot the Capital Market Line
+# Calculate Capital Market Line (CML)
 cml_slope = (mmvp_return - risk_free_rate) / mmvp_volatility
 cml_x = np.linspace(0, 0.31, 100)  # Adjust based on your data range
 cml_y = risk_free_rate + cml_slope * cml_x
 
 
-# Plotting the efficient frontier with MMVP and MVP
+# Plotting the efficient frontier with CML, Max Sharpe Ratio, and MVP
 plt.figure(figsize=(10, 6))
-plt.plot(target_volatilities, target_returns, label='Efficient Frontier', color='green')
+plt.plot(target_volatilities, target_returns, label='Markowitz Bullet', color='green')
 plt.scatter(mvp_volatility, mvp_return, color='red', marker='*', s=200, label='Minimum Variance Portfolio')
 plt.scatter(mmvp_volatility, mmvp_return, color='blue', marker='*', s=200, label='Maximum Mean-Variance Portfolio')
-plt.title('Efficient Frontier with Minimum Variance and Maximum Mean-Variance Portfolios')
+plt.title('Efficient Frontier and Key Portfolios')
 plt.xlabel('Volatility (Risk)')
 plt.ylabel('Return')
 plt.grid(True)
