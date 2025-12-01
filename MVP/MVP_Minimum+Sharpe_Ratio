@@ -3,6 +3,8 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import datetime as dt
 from scipy.optimize import minimize
+import pandas as pd
+
 
 # Time is from 5 years ago to today
 today = dt.datetime.today().strftime('%Y-%m-%d')
@@ -38,11 +40,12 @@ num_assets = len(stocks)
 # Assigns initial uniform weights to all assets
 weights = np.array([1/num_assets] * num_assets)
 
-# Constricts the weights to sum to 1
+# Checks whether the weights sum to 1
 constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
 
-# Each asset's weight is between 0 and 1
-bounds = tuple((0, 1) for _ in range(num_assets))
+# Each asset is between -1 and 1 where a number less than one represents shorting
+# and between 0 and 1 represents longing
+bounds = tuple((-1, 1) for _ in range(num_assets))
 
 # Chose risk free rate based on Market Yield on U.S. Treasury Securities
 risk_free_rate = 0.0439 
@@ -115,7 +118,7 @@ for target_return in target_returns:
 
 # Calculate Capital Market Line (CML)
 cml_slope = (mmvp_return - risk_free_rate) / mmvp_volatility
-cml_x = np.linspace(0, 0.31, 100)  # Adjust based on your data range
+cml_x = np.linspace(0, 0.49, 100)  # Adjust based on your data range
 cml_y = risk_free_rate + cml_slope * cml_x
 
 
@@ -131,3 +134,42 @@ plt.grid(True)
 plt.plot(cml_x, cml_y, color='black', linewidth=2, label='Capital Market Line')
 plt.legend(loc='upper left', fontsize=10)
 plt.show()
+
+
+def backtest_portfolio(returns, weights, initial_value=1, rebalance_period=252):
+    
+    # Calculate daily portfolio returns
+    portfolio_returns = returns.dot(weights)
+    
+    # Create a portfolio value tracker
+    portfolio_values = (1 + portfolio_returns).cumprod() * initial_value
+
+    # Compute cumulative returns
+    cumulative_returns = portfolio_values / initial_value - 1
+
+    # Compute performance metrics
+    annualized_return = portfolio_returns.mean() * 252
+    annualized_volatility = portfolio_returns.std() * np.sqrt(252)
+    sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility
+    
+    # Calculate maximum drawdown
+    rolling_max = portfolio_values.cummax()
+    drawdown = (portfolio_values - rolling_max) / rolling_max
+    max_drawdown = drawdown.min()
+    
+    return portfolio_values, cumulative_returns, sharpe_ratio, max_drawdown
+
+# Run the backtest using MMVP weights or MVP weights 
+portfolio_values, cumulative_returns, sharpe_ratio, max_drawdown = backtest_portfolio(returns, mmvp_weights)
+
+plt.figure(figsize=(12, 6))
+plt.plot(portfolio_values, label="Portfolio Value")
+plt.title("Backtested Portfolio Performance")
+plt.xlabel("Date")
+plt.ylabel("Portfolio Value (USD)")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+print(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+print(f"Maximum Drawdown: {max_drawdown:.2%}")
